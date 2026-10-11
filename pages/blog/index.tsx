@@ -11,6 +11,7 @@ import Badge from 'components/badge'
 import * as gtag from 'lib/gtag'
 import debounce from 'lodash.debounce'
 import { GetStaticProps } from 'next'
+import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { NextSeo } from 'next-seo'
 import { useCallback, useEffect, useState } from 'react'
@@ -25,11 +26,12 @@ const PAGE_SIZE = 5
 type BlogProps = {
   posts: Post[]
   tagList: string[]
+  initialPage: number
 }
 
-const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
+const Blog = ({ posts, tagList, initialPage }: BlogProps): JSX.Element => {
+  const router = useRouter()
   const [currentSearch, setCurrentSearch] = useState('')
-  const [page, setPage] = useState(1)
   const [hideCoverMode, setHideCoverMode] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const trackSearch = useCallback(
@@ -38,7 +40,7 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
   )
   const seoTitle = 'Blog | Nicky Lao'
   const seoDesc = '关于大前端的技术文章，包含且不限于 React、Angular、React Native 等。'
-  const filteredPosts = posts
+  const filteredPosts = [...posts]
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
     .filter(({ title, summary, tags }) => {
       const searchString = `${title.toLowerCase()} ${summary.toLowerCase()} ${tags?.join(' ')}`
@@ -46,12 +48,17 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
     })
 
   const totalPages = Math.max(1, Math.ceil(filteredPosts.length / PAGE_SIZE))
-  const currentPage = Math.min(page, totalPages)
+  const routePage = router.isReady ? Number(router.query.page || initialPage) : initialPage
+  const currentPage = Number.isInteger(routePage) && routePage > 0 ? Math.min(routePage, totalPages) : 1
   const pagedPosts = filteredPosts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-  const goToPage = (n: number) => {
-    setPage(n)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const pageHref = (n: number) => ({
+    pathname: n === 1 ? '/blog' : `/blog/page/${n}`,
+    query: currentSearch ? { q: currentSearch } : {},
+  })
+
+  useEffect(() => {
+    if (router.isReady) setCurrentSearch(typeof router.query.q === 'string' ? router.query.q : '')
+  }, [router.isReady, router.query.q])
 
   const handleInputChange = e => {
     const searchString = e.target.value
@@ -59,7 +66,11 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
       trackSearch(searchString) // Save what people are interested in reading
     }
     setCurrentSearch(searchString)
-    setPage(1)
+    const query = { ...router.query }
+    if (router.pathname.includes('[page]')) query.page = '1'
+    if (searchString) query.q = searchString
+    else delete query.q
+    router.replace({ pathname: router.pathname, query }, undefined, { shallow: true, scroll: false })
   }
 
   useEffect(() => {
@@ -121,15 +132,23 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
       <PostList posts={pagedPosts} hideImage={!hideCoverMode} />
       {totalPages > 1 && (
         <nav aria-label="Pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, margin: '32px 0' }}>
-          <button type="button" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>
-            Prev
-          </button>
+          {currentPage > 1 ? (
+            <Link href={pageHref(currentPage - 1)}>
+              <a>Prev</a>
+            </Link>
+          ) : (
+            <span aria-disabled="true">Prev</span>
+          )}
           <span>
             {currentPage} / {totalPages}
           </span>
-          <button type="button" disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>
-            Next
-          </button>
+          {currentPage < totalPages ? (
+            <Link href={pageHref(currentPage + 1)}>
+              <a>Next</a>
+            </Link>
+          ) : (
+            <span aria-disabled="true">Next</span>
+          )}
         </nav>
       )}
       <button
@@ -144,13 +163,15 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
   )
 }
 
-export const getStaticProps: GetStaticProps = async () => {
-  const posts = allPosts.map(post => pick(post, ['slug', 'title', 'summary', 'publishedAt', 'image', 'readingTime']))
+export const getBlogProps = (initialPage = 1) => {
+  const posts = allPosts.map(post => pick(post, ['slug', 'title', 'summary', 'tags', 'publishedAt', 'image', 'readingTime']))
   const tags = new Set(allPosts.reduce((acc, cur) => acc.concat(cur.tags), []))
   const tagList: string[] = [...tags]
   return {
-    props: { posts, tagList },
+    props: { posts, tagList, initialPage },
   }
 }
+
+export const getStaticProps: GetStaticProps = async () => getBlogProps()
 
 export default Blog
