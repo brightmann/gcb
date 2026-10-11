@@ -20,6 +20,8 @@ import type { Post } from '.contentlayer/types'
 import { allPosts } from '.contentlayer/data'
 import styles from './index.module.scss'
 
+const PAGE_SIZE = 5
+
 type BlogProps = {
   posts: Post[]
   tagList: string[]
@@ -27,6 +29,7 @@ type BlogProps = {
 
 const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
   const [currentSearch, setCurrentSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [hideCoverMode, setHideCoverMode] = useState(false)
   const [showBackToTop, setShowBackToTop] = useState(false)
   const trackSearch = useCallback(
@@ -42,12 +45,21 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
       return searchString.includes(currentSearch.toLowerCase())
     })
 
+  const totalPages = Math.max(1, Math.ceil(filteredPosts.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pagedPosts = filteredPosts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const goToPage = (n: number) => {
+    setPage(n)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const handleInputChange = e => {
     const searchString = e.target.value
     if (searchString !== '') {
       trackSearch(searchString) // Save what people are interested in reading
     }
     setCurrentSearch(searchString)
+    setPage(1)
   }
 
   useEffect(() => {
@@ -106,7 +118,20 @@ const Blog = ({ posts, tagList }: BlogProps): JSX.Element => {
           setHideCoverMode(v)
         }}
       />
-      <PostList posts={filteredPosts} hideImage={!hideCoverMode} />
+      <PostList posts={pagedPosts} hideImage={!hideCoverMode} />
+      {totalPages > 1 && (
+        <nav aria-label="Pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, margin: '32px 0' }}>
+          <button type="button" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>
+            Prev
+          </button>
+          <span>
+            {currentPage} / {totalPages}
+          </span>
+          <button type="button" disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>
+            Next
+          </button>
+        </nav>
+      )}
       <button
         type="button"
         aria-label="回到顶部"
